@@ -115,13 +115,30 @@ $1 = {edi = 0x0, esi = 0x0, ebp = 0x0, esp_dummy = 0x0, ebx = 0x0, edx = 0x0, ec
 3, fs = 0x23, es = 0x23, ds = 0x23, vec_no = 0x0, error_code = 0x0, frame_pointer = 0x0, eip = 0x0, cs = 0x1
 b, eflags = 0x202, esp = 0x0, ss = 0x23}
 و بعد از تابع لود مقادیر esp و eip مقدار دهی میشوند
+$1 = {edi = 0x0, esi = 0x0, ebp = 0x0, esp_dummy = 0x0, ebx = 0x0, edx = 0x0, ecx = 0x0, eax = 0x0, gs = 0x23, fs = 0x23, es
+ = 0x23, ds = 0x23, vec_no = 0x0, error_code = 0x0, frame_pointer = 0x0, eip = 0x8048754, cs = 0x1b, eflags = 0x202, esp = 0
+xc0000000, ss = 0x23}
 
 ۱۱.
 
+    وقتی اینتراپت اگزیت تمام می شود، رجیستر ها و مقادیر مربوط به طوری تنظیم شده اند که ما
+    به یوزر اسپیس می رویم. مقدار
+    eip
+    به روی تابع
+    _start
+    برنامه
+    do-nothing
+    قرار می گیرد و اجرا از آن جا ادامه پیدا می کند.
+
 ۱۲.
+
+    تفاوتی ندارند و مقدار رجیستر ها برابر همان مقدار
+    if_
+    است.
 
 ۱۳.
 
+    #0  _start (argc=<unavailable>, argv=<unavailable>) at ../../lib/user/entry.c:9
 
 ## دیباگ
 
