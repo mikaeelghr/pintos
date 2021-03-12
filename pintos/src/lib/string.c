@@ -373,3 +373,40 @@ strlcat (char *dst, const char *src, size_t size)
   return src_len + dst_len;
 }
 
+
+/*
+ * be aware: this function will have effect on "command" and put \0 in the delimiters of it.
+ * if delimiters is NULL, it defaults to DEFAULT_DELIMITERS
+ */
+int
+split_command_to_argv (char *command, int *argc, char **argv[], char *delimiters)
+{
+  if (delimiters == NULL)
+    {
+      delimiters = DEFAULT_DELIMITERS;
+    }
+  *argc = 0;
+  char *token;
+  char *rest = NULL;
+  int success = 1;
+  for (token = strtok_r (command, delimiters, &rest);
+       token != NULL;
+       token = strtok_r (NULL, delimiters, &rest))
+    {
+      if (*argc >= MAX_TOK_SIZE)
+        {
+          success = 0;
+          break;
+        }
+      (*argv)[*argc] = token;
+      (*argc)++;
+    }
+
+  if (success && *argc < MAX_TOK_SIZE)
+      (*argv)[*argc] = NULL;
+  else
+      success = 0;
+
+  return success;
+}
+

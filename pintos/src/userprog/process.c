@@ -22,6 +22,7 @@
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+bool put_main_arguments_in_stack(void **esp, int argc, char *argv[]);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -31,6 +32,7 @@ tid_t
 process_execute (const char *file_name)
 {
   char *fn_copy;
+  char *dummy_save_ptr;
   tid_t tid;
 
   sema_init (&temporary, 0);
@@ -41,8 +43,15 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  char *actual_file_name = palloc_get_page (0);
+  if (actual_file_name == NULL)
+    return TID_ERROR;
+  strlcpy(actual_file_name, file_name, PGSIZE);
+
+  actual_file_name = strtok_r(actual_file_name, DEFAULT_DELIMITERS, &dummy_save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (actual_file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -211,8 +220,11 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp)
+load (const char *_file_name, void (**eip) (void), void **esp)
 {
+  // make a copy from filename to tokenize in splitting to argv
+  char *file_name_copy = palloc_get_page(0);
+  strlcpy(file_name_copy, _file_name, PGSIZE);
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
@@ -224,7 +236,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL)
     goto done;
+
+  char **argv = (char **) malloc (MAX_TOK_SIZE * sizeof (char *));
+  int argc;
+  if (!split_command_to_argv (file_name_copy, &argc, &argv, NULL))
+    {
+      goto done;
+    }
   process_activate ();
+  char *file_name = argv[0];
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -309,6 +329,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
+
+  put_main_arguments_in_stack(esp, argc, argv);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -442,7 +464,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE - 20;
+        *esp = PHYS_BASE;
       else
         palloc_free_page (kpage);
     }
@@ -467,4 +489,48 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+bool
+put_main_arguments_in_stack (void **esp, int argc, char *argv[])
+{
+  uint8_t *stack_byte_pointer = (uint8_t *) *esp;
+  uint8_t *arg_address[argc];
+  int i;
+  for(i = argc - 1; i >= 0; i--)
+    {
+      stack_byte_pointer -= (strlen(argv[i]) + 1) * sizeof (char *);
+      strlcpy((char *)stack_byte_pointer, argv[i], PGSIZE);
+      arg_address[i] = stack_byte_pointer;
+    }
+
+  // align words
+  if(((uint32_t)stack_byte_pointer & 15) != 0)
+    stack_byte_pointer -= ((uint32_t)stack_byte_pointer & 15);
+
+  uint32_t *stack_word_pointer = (uint32_t *)stack_byte_pointer;
+
+  stack_word_pointer--;
+  *stack_word_pointer = (uint32_t) 0;
+
+  for(i = argc - 1; i >= 0; i--)
+    {
+      stack_word_pointer--;
+      *stack_word_pointer = (uint32_t) arg_address[i];
+    }
+
+  // argv
+  stack_word_pointer--;
+  *stack_word_pointer = (uint32_t) (stack_word_pointer + 1);
+
+  // argc
+  stack_word_pointer--;
+  *stack_word_pointer = (uint32_t) argc;
+
+  // return address
+  stack_word_pointer--;
+  *stack_word_pointer = 0;
+
+  *esp = (void *) stack_word_pointer;
+  return true;
 }

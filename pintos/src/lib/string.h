@@ -2,6 +2,8 @@
 #define __LIB_STRING_H
 
 #include <stddef.h>
+#define MAX_TOK_SIZE 64
+#define DEFAULT_DELIMITERS " \n"
 
 /* Standard. */
 void *memcpy (void *, const void *, size_t);
@@ -24,6 +26,7 @@ size_t strlcpy (char *, const char *, size_t);
 size_t strlcat (char *, const char *, size_t);
 char *strtok_r (char *, const char *, char **);
 size_t strnlen (const char *, size_t);
+int split_command_to_argv (char *command, int *argc, char **argv[], char *delimiters);
 
 /* Try to be helpful. */
 #define strcpy dont_use_strcpy_use_strlcpy
