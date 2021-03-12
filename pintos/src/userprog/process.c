@@ -237,10 +237,11 @@ load (const char *_file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL)
     goto done;
 
-  char **argv = (char **) malloc (MAX_TOK_SIZE * sizeof (char *));
+  char **argv = palloc_get_page(0);
   int argc;
   if (!split_command_to_argv (file_name_copy, &argc, &argv, NULL))
     {
+      palloc_free_page(argv);
       goto done;
     }
   process_activate ();
@@ -331,6 +332,7 @@ load (const char *_file_name, void (**eip) (void), void **esp)
     goto done;
 
   put_main_arguments_in_stack(esp, argc, argv);
+  palloc_free_page(argv);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
