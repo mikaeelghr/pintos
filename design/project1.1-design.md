@@ -4,13 +4,13 @@
 -----
  > نام و آدرس پست الکترونیکی اعضای گروه را در این قسمت بنویسید.
 
-نام و نام خانوادگی <example@example.com>
+حمیدرضا کلباسی <hamidrezakalbasi@protonmail.com>
 
-نام و نام خانوادگی <example@example.com> 
+مهدی جعفری <mahdi.jfri.79@gmail.com>
 
-نام و نام خانوادگی <example@example.com> 
+میکائیل قربانی <mikaeelghr@gmail.com>
 
-نام و نام خانوادگی <example@example.com> 
+یاسین نوران <ynooran@gmail.com>
 
 مقدمات
 ----------
