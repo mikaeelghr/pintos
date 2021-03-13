@@ -36,4 +36,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       printf("%s", args[2]);
     }
+  if (args[0] == SYS_PRACTICE)
+    {
+      f->eax = args[1] + 1;
+    }
 }
