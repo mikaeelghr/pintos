@@ -507,8 +507,8 @@ put_main_arguments_in_stack (void **esp, int argc, char *argv[])
     }
 
   // align words
-  if(((uint32_t)stack_byte_pointer & 15) != 0)
-    stack_byte_pointer -= ((uint32_t)stack_byte_pointer & 15);
+  if ( (((uint32_t)stack_byte_pointer - 4 * (argc + 3)) & 15) != 0)
+    stack_byte_pointer -= (((uint32_t)stack_byte_pointer - 4 * (argc + 3)) & 15);
 
   uint32_t *stack_word_pointer = (uint32_t *)stack_byte_pointer;
 
