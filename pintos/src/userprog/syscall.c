@@ -47,7 +47,11 @@ syscall_handler (struct intr_frame *f UNUSED)
     }
   else if (args[0] == SYS_WRITE)
     {
-      printf("%s", args[2]);
+      if(args[1] == STDOUT_FILENO)
+        {
+          const char *buffer = (char *) args[2];
+          putbuf (buffer, (int) args[3]);
+        }
     }
   else if (args[0] == SYS_PRACTICE)
     {
