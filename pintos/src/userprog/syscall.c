@@ -1,10 +1,13 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
 static void syscall_handler (struct intr_frame *);
+
+int fdall = 5;
 
 void
 syscall_init (void)
@@ -32,11 +35,21 @@ syscall_handler (struct intr_frame *f UNUSED)
       printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
       thread_exit ();
     }
-  if (args[0] == SYS_WRITE)
+  else if (args[0] == SYS_OPEN)
+    {
+      struct file *fi = filesys_open(args[1]);
+      struct file_descriptor *fds = malloc(sizeof (struct file_descriptor));
+      fds->fd = fdall;
+      fdall += 1;
+      fds->file = fi;
+      list_push_back(&thread_current ()->file_descriptors, &(fds->elem));
+      f->eax = fds->fd;
+    }
+  else if (args[0] == SYS_WRITE)
     {
       printf("%s", args[2]);
     }
-  if (args[0] == SYS_PRACTICE)
+  else if (args[0] == SYS_PRACTICE)
     {
       f->eax = args[1] + 1;
     }
