@@ -15,6 +15,18 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+struct file *
+get_file_from_fd(struct list *l, int the_fd)
+{
+  struct list_elem *e = list_head (&l);
+  while ((e = list_next (e)) != list_end (&l))
+    {
+      struct file_descriptor *ev = list_entry(e, struct file_descriptor, elem);
+      if (ev->fd == the_fd) return ev->file;
+    }
+  return NULL;
+}
+
 static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
@@ -44,6 +56,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       fds->file = fi;
       list_push_back(&thread_current ()->file_descriptors, &(fds->elem));
       f->eax = fds->fd;
+    }
+  else if (args[0] == SYS_FILESIZE)
+    {
+      struct file *fi = get_file_from_fd(&thread_current ()->file_descriptors, args[1]);
+      f->eax = file_length(fi);
     }
   else if (args[0] == SYS_WRITE)
     {
