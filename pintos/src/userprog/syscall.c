@@ -4,6 +4,11 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+
+#define put_error_on_frame_when_null(o, f) if (o == NULL) f->eax=-1
+#define return_on_null(o) if (o == NULL) return
 
 static void syscall_handler (struct intr_frame *);
 
@@ -15,22 +20,32 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-struct file *
-get_file_from_fd(struct list *l, int the_fd)
+struct file_descriptor *
+get_file_descriptor_from_fd (struct list *l, int the_fd)
 {
   struct list_elem *e = list_head (l);
   while ((e = list_next (e)) != list_end (l))
     {
-      struct file_descriptor *ev = list_entry(e, struct file_descriptor, elem);
-      if (ev->fd == the_fd) return ev->file;
+      struct file_descriptor *ev = list_entry (e,
+      struct file_descriptor, elem);
+      if (ev->fd == the_fd) return ev;
     }
   return NULL;
+}
+
+struct file *
+get_file_from_fd (struct list *l, int the_fd)
+{
+  struct file_descriptor *file_descriptor_instance = get_file_descriptor_from_fd (l, the_fd);
+  if (file_descriptor_instance == NULL)
+    return NULL;
+  return file_descriptor_instance->file;
 }
 
 static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
-  uint32_t* args = ((uint32_t*) f->esp);
+  uint32_t *args = ((uint32_t *) f->esp);
 
   /*
    * The following print statement, if uncommented, will print out the syscall
@@ -49,31 +64,36 @@ syscall_handler (struct intr_frame *f UNUSED)
     }
   else if (args[0] == SYS_OPEN)
     {
-      struct file *fi = filesys_open(args[1]);
-      if (fi == NULL)
-        {
-          f->eax = -1;
-          return;
-        } 
-      struct file_descriptor *fds = palloc_get_page(0);
-      (sizeof (struct file_descriptor));
+      struct file *fi = filesys_open (args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      struct file_descriptor *fds = palloc_get_page (0);
       fds->fd = fdall;
       fdall += 1;
       fds->file = fi;
-      list_push_back(&thread_current ()->file_descriptors, &(fds->elem));
+      list_push_back (&thread_current ()->file_descriptors, &(fds->elem));
       f->eax = fds->fd;
     }
   else if (args[0] == SYS_FILESIZE)
     {
-      struct file *fi = get_file_from_fd(&thread_current ()->file_descriptors, args[1]);
-      f->eax = file_length(fi);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_length (fi);
     }
   else if (args[0] == SYS_WRITE)
     {
-      if(args[1] == STDOUT_FILENO)
+      if (args[1] == STDOUT_FILENO)
         {
           const char *buffer = (char *) args[2];
           putbuf (buffer, (int) args[3]);
+        }
+      else
+        {
+          struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+          put_error_on_frame_when_null(fi, f);
+          return_on_null(fi);
+          f->eax = file_write (fi, args[2], args[3]);
         }
     }
   else if (args[0] == SYS_PRACTICE)
@@ -82,7 +102,39 @@ syscall_handler (struct intr_frame *f UNUSED)
     }
   else if (args[0] == SYS_READ)
     {
-      struct file *fi = get_file_from_fd(&thread_current ()->file_descriptors, args[1]);
-      f->eax = file_read(fi, args[2], args[3]);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_read (fi, args[2], args[3]);
+    }
+  else if (args[0] == SYS_CREATE)
+    {
+      f->eax = filesys_create (args[1], args[2]);
+    }
+  else if (args[0] == SYS_CLOSE)
+    {
+      struct file_descriptor *file_descriptor_instance = get_file_descriptor_from_fd (
+              &thread_current ()->file_descriptors, args[1]);
+      return_on_null(file_descriptor_instance);
+      file_close (file_descriptor_instance->file);
+      list_remove (&(file_descriptor_instance->elem));
+      palloc_free_page (file_descriptor_instance);
+    }
+  else if (args[0] == SYS_SEEK)
+    {
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      return_on_null(fi);
+      file_seek (fi, args[2]);
+    }
+  else if (args[0] == SYS_TELL)
+    {
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_tell (fi);
+    }
+  else if (args[0] == SYS_REMOVE)
+    {
+      f->eax = filesys_remove (args[1]);
     }
 }
