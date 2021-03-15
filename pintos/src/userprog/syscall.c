@@ -80,4 +80,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       f->eax = args[1] + 1;
     }
+  else if (args[0] == SYS_READ)
+    {
+      struct file *fi = get_file_from_fd(&thread_current ()->file_descriptors, args[1]);
+      f->eax = file_read(fi, args[2], args[3]);
+    }
 }
