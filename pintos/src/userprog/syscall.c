@@ -7,7 +7,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/vaddr.h"
-
+#include "threads/thread.h"
 
 #define put_error_on_frame_when_null(o, f) if (o == NULL) f->eax=-1
 #define return_on_null(o) if (o == NULL) return
@@ -46,7 +46,7 @@ get_file_from_fd (struct list *l, int the_fd)
 
 static bool is_char_pointer_valid(const char* ptr){
 	char* endptr=ptr;
-	thread* t=&thread_current();
+	struct thread* t=thread_current();
 	if(ptr<t){
 		return 0;
 	}
@@ -59,9 +59,9 @@ static bool is_char_pointer_valid(const char* ptr){
 	return 1;
 }
 
-static bool is_pointer_valid(const void* ptr, const uint32_t size=sizeof(uint32_t)){
-	thread* t=&thread_current();
-	if(ptr<t || ptr+size>t+PGSIZE){
+static bool is_pointer_valid(const void* ptr){
+	struct thread* t=thread_current();
+	if(ptr<t || ptr+4>t+PGSIZE){
 		return 0;
 	}
 	return 1;
@@ -90,7 +90,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = args[1];
       printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
       thread_exit ();
-    }i
+    }
   else if (args[0] == SYS_OPEN)
     {
       if(is_char_pointer_valid(args[1])){
