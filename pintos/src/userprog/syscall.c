@@ -18,8 +18,8 @@ syscall_init (void)
 struct file *
 get_file_from_fd(struct list *l, int the_fd)
 {
-  struct list_elem *e = list_head (&l);
-  while ((e = list_next (e)) != list_end (&l))
+  struct list_elem *e = list_head (l);
+  while ((e = list_next (e)) != list_end (l))
     {
       struct file_descriptor *ev = list_entry(e, struct file_descriptor, elem);
       if (ev->fd == the_fd) return ev->file;
@@ -50,7 +50,13 @@ syscall_handler (struct intr_frame *f UNUSED)
   else if (args[0] == SYS_OPEN)
     {
       struct file *fi = filesys_open(args[1]);
-      struct file_descriptor *fds = malloc(sizeof (struct file_descriptor));
+      if (fi == NULL)
+        {
+          f->eax = -1;
+          return;
+        } 
+      struct file_descriptor *fds = palloc_get_page(0);
+      (sizeof (struct file_descriptor));
       fds->fd = fdall;
       fdall += 1;
       fds->file = fi;
