@@ -105,6 +105,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct list file_descriptors;
+    struct semaphore waiter;
 #endif
 
     /* Owned by thread.c. */
@@ -146,5 +147,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Our garbage */
+struct thread *get_thread_from_tid(tid_t tid);
 
 #endif /* threads/thread.h */

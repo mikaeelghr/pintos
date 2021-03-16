@@ -183,7 +183,9 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  /* Our garbages */
   list_init(&(t->file_descriptors));
+  sema_init(&(t->waiter), 0);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -204,6 +206,24 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
   return tid;
+}
+
+/* Our garbage
+   This function get thread from tid
+*/
+struct thread *
+get_thread_from_tid(tid_t tid)
+{
+  struct list_elem *e;
+
+  // IDK but maybe usefull: ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid) return t;
+    }
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled

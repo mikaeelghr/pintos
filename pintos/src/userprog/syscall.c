@@ -62,6 +62,14 @@ syscall_handler (struct intr_frame *f UNUSED)
       printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
       thread_exit ();
     }
+  else if (args[0] == SYS_EXEC)
+    {
+      f->eax = process_execute(args[1]);
+    }
+  else if (args[0] == SYS_WAIT)
+    {
+      f->eax = process_wait(args[1]);
+    }
   else if (args[0] == SYS_OPEN)
     {
       struct file *fi = filesys_open (args[1]);

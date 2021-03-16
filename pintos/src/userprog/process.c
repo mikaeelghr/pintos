@@ -98,9 +98,10 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
-  sema_down (&temporary);
+  struct thread *child = get_thread_from_tid(child_tid);
+  sema_down (&(child->waiter));
   return 0;
 }
 
@@ -127,7 +128,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  sema_up (&temporary);
+  sema_up (&(cur->waiter));
 }
 
 /* Sets up the CPU for running user code in the current
