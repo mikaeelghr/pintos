@@ -106,6 +106,7 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     struct list file_descriptors;
     struct semaphore waiter;
+    int exit_code;
 #endif
 
     /* Owned by thread.c. */

@@ -102,7 +102,7 @@ process_wait (tid_t child_tid)
 {
   struct thread *child = get_thread_from_tid(child_tid);
   sema_down (&(child->waiter));
-  return 0;
+  return child->exit_code;
 }
 
 /* Free the current process's resources. */

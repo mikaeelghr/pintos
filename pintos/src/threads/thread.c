@@ -560,7 +560,10 @@ thread_schedule_tail (struct thread *prev)
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread)
     {
       ASSERT (prev != cur);
-      palloc_free_page (prev);
+      // This is kesafat kari
+      // If you remove thread, you lost exit_code
+      // So sorry memory :(
+      // palloc_free_page (prev);
     }
 }
 
