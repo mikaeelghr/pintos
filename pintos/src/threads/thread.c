@@ -224,6 +224,8 @@ get_thread_from_tid(tid_t tid)
       struct thread *t = list_entry (e, struct thread, allelem);
       if (t->tid == tid) return t;
     }
+  
+  return NULL;
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
