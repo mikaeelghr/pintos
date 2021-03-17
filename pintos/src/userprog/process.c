@@ -345,11 +345,15 @@ load (const char *_file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+  /* We arrive here when the load is successful. */
   success = true;
-
+  thread_current ()->execfile=file;
+  file_deny_write (thread_current ()->execfile);
+  goto ret;
  done:
-  /* We arrive here whether the load is successful or not. */
+  /* We arrive here when the load is not successful. */
   file_close (file);
+ ret:
   return success;
 }
 

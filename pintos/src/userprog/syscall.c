@@ -9,8 +9,8 @@
 #include "threads/vaddr.h"
 
 #define put_error_on_frame_when_false(o, f) if (!o) f->eax=-1
-#define put_error_on_frame_when_null(o, f) if (o == NULL) f->eax=-1
-#define return_on_null(o) if (o == NULL) return
+#define put_error_on_frame_when_null(o, f) if ((o) == NULL) f->eax=-1
+#define return_on_null(o) if ((o) == NULL) return
 
 static void syscall_handler (struct intr_frame *);
 
@@ -53,6 +53,7 @@ void _exit (int status)
   struct thread *t = thread_current ();
   t->exit_code = status;
   printf ("%s: exit(%d)\n", &thread_current ()->name, status);
+  file_close (thread_current ()->execfile);
   thread_exit ();
 }
 

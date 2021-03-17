@@ -103,6 +103,7 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    struct file *execfile;
     uint32_t *pagedir;                  /* Page directory. */
     struct list file_descriptors;
     struct semaphore waiter;
