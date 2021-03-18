@@ -7,6 +7,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/vaddr.h"
+#include "devices/shutdown.h"
 
 #define put_error_on_frame_when_false(o, f) if (!o) f->eax=-1
 #define put_error_on_frame_when_null(o, f) if ((o) == NULL) f->eax=-1
@@ -187,6 +188,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       if (!are_args_valid (args, 2) || !is_void_pointer_valid (thread_current (), (void *) args[1]))
         _exit (-1);
       f->eax = filesys_remove (args[1]);
+    }
+  else if (args[0] == SYS_HALT)
+    {
+      shutdown_power_off ();
     }
 }
 
