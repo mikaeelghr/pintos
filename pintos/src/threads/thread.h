@@ -108,6 +108,8 @@ struct thread
     struct list file_descriptors;
     struct semaphore waiter;
     int exit_code;
+    struct semaphore loader;
+    int success;                        /* Has load been successfull? */
 #endif
 
     /* Owned by thread.c. */
@@ -126,6 +128,7 @@ void thread_tick (void);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
+struct thread *thread_create_get_thread (const char *name, int priority, thread_func *, void *);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);

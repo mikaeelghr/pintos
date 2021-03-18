@@ -100,7 +100,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       struct file *fi = filesys_open (args[1]);
       put_error_on_frame_when_null(fi, f);
       return_on_null(fi);
-      struct file_descriptor *fds = palloc_get_page (0);
+      struct file_descriptor *fds = malloc(sizeof (struct file_descriptor));
       fds->fd = fdall;
       fdall += 1;
       fds->file = fi;
@@ -163,7 +163,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       return_on_null(file_descriptor_instance);
       file_close (file_descriptor_instance->file);
       list_remove (&(file_descriptor_instance->elem));
-      palloc_free_page (file_descriptor_instance);
+      free(file_descriptor_instance);
     }
   else if (args[0] == SYS_SEEK)
     {
