@@ -57,10 +57,9 @@ process_execute (const char *file_name)
     {
       palloc_free_page (fn_copy);
       palloc_free_page (actual_file_name);
-      free(file);
       return TID_ERROR;
     }
-  free (file);
+  file_close (file);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (actual_file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -115,7 +114,9 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid)
 {
+  enum intr_level old_level = intr_disable ();
   struct thread *child = get_thread_from_tid(child_tid);
+  intr_set_level (old_level);
   if (child == NULL)
     {
       return -1;
@@ -123,6 +124,10 @@ process_wait (tid_t child_tid)
   else
     {
       sema_down (&(child->waiter));
+      old_level = intr_disable ();
+      if (child != NULL)
+        list_remove (&(child->allelem));
+      intr_set_level (old_level);
       return child->exit_code;
     }
 }

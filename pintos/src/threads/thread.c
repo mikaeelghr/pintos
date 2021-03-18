@@ -25,8 +25,10 @@
 static struct list ready_list;
 
 /* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
+   when they are first scheduled and removed when they are waited. */
 static struct list all_list;
+
+static struct lock all_list_lock;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -216,7 +218,7 @@ get_thread_from_tid(tid_t tid)
 {
   struct list_elem *e;
 
-  // IDK but maybe usefull: ASSERT (intr_get_level () == INTR_OFF);
+  ASSERT (intr_get_level () == INTR_OFF);
 
   for (e = list_begin (&all_list); e != list_end (&all_list);
        e = list_next (e))
@@ -224,7 +226,7 @@ get_thread_from_tid(tid_t tid)
       struct thread *t = list_entry (e, struct thread, allelem);
       if (t->tid == tid) return t;
     }
-  
+
   return NULL;
 }
 
@@ -314,7 +316,6 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
