@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -18,6 +19,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
@@ -50,10 +52,23 @@ process_execute (const char *file_name)
 
   actual_file_name = strtok_r(actual_file_name, DEFAULT_DELIMITERS, &dummy_save_ptr);
 
+  struct file *file = filesys_open (actual_file_name);
+  if (!file)
+    {
+      palloc_free_page (fn_copy);
+      palloc_free_page (actual_file_name);
+      free(file);
+      return TID_ERROR;
+    }
+  free (file);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (actual_file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+    {
+      palloc_free_page (fn_copy);
+      palloc_free_page (actual_file_name);
+    }
   return tid;
 }
 
@@ -76,7 +91,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
-    thread_exit ();
+    _exit(-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
