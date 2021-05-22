@@ -6,86 +6,40 @@
 #include "threads/thread.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "filesys/inode.h"
 #include "threads/vaddr.h"
-#include "threads/thread.h"
+#include "devices/shutdown.h"
 
-#define put_error_on_frame_when_null(o, f) \
-  if (o == NULL)                           \
-  f->eax = -1
-#define return_on_null(o) \
-  if (o == NULL)          \
-  return
+#define put_error_on_frame_when_false(o, f) if (!(o)) f->eax=-1
+#define return_on_false(o) if (!(o)) return
 
-static void syscall_handler(struct intr_frame *);
+#define put_error_on_frame_when_null(o, f) if ((o) == NULL) f->eax=-1
+#define return_on_null(o) if ((o) == NULL) return
 
-int fdall = 5;
+static void syscall_handler (struct intr_frame *);
 
-void syscall_init(void)
+bool are_args_valid (uint32_t *, int);
+
+bool is_string_valid (char *);
+
+void
+syscall_init (void)
 {
-  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-struct file_descriptor *
-get_file_descriptor_from_fd(struct list *l, int the_fd)
+void _exit (int status)
 {
-  struct list_elem *e = list_head(l);
-  while ((e = list_next(e)) != list_end(l))
-  {
-    struct file_descriptor *ev = list_entry(e,
-                                            struct file_descriptor, elem);
-    if (ev->fd == the_fd)
-      return ev;
-  }
-  return NULL;
-}
-
-struct file *
-get_file_from_fd(struct list *l, int the_fd)
-{
-  struct file_descriptor *file_descriptor_instance = get_file_descriptor_from_fd(l, the_fd);
-  if (file_descriptor_instance == NULL)
-    return NULL;
-  return file_descriptor_instance->file;
-}
-
-static bool is_char_pointer_valid(const char *ptr)
-{
-  char *endptr = ptr;
-  struct thread *t = thread_current();
-  if (ptr < t)
-  {
-    return 0;
-  }
-  while (endptr < t + PGSIZE && *endptr != 0)
-  {
-    endptr++;
-  }
-  if (endptr == t + PGSIZE)
-  {
-    return 0;
-  }
-  return 1;
-}
-
-static bool is_pointer_valid(const void *ptr)
-{
-  struct thread *t = thread_current();
-  if (ptr < t || ptr + 4 > t + PGSIZE)
-  {
-    return 0;
-  }
-  return 1;
+  struct thread *t = thread_current ();
+  t->exit_code = status;
+  printf ("%s: exit(%d)\n", &thread_current ()->name, status);
+  thread_exit ();
 }
 
 static void
-syscall_handler(struct intr_frame *f UNUSED)
+syscall_handler (struct intr_frame *f UNUSED)
 {
-  uint32_t *args = ((uint32_t *)f->esp);
-  if (!is_pointer_valid(args) || !is_pointer_valid(args + 1))
-  {
-    f->eax = -1;
-    return;
-  }
+  uint32_t *args = ((uint32_t *) f->esp);
 
   /*
    * The following print statement, if uncommented, will print out the syscall
@@ -96,117 +50,240 @@ syscall_handler(struct intr_frame *f UNUSED)
 
   /* printf("System call number: %d\n", args[0]); */
 
-  printf("tname: %s\n", &thread_current()->name);
+  f->eax = 0;
+
+  if (!are_args_valid (args, 1))
+    _exit (-1);
+
   if (args[0] == SYS_EXIT)
-  {
-    f->eax = args[1];
-    printf("%s: exit(%d)\n", &thread_current()->name, args[1]);
-    thread_exit();
-  }
+    {
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      f->eax = args[1];
+      _exit (args[1]);
+    }
+  else if (args[0] == SYS_EXEC)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      f->eax = process_execute (args[1]);
+    }
+  else if (args[0] == SYS_WAIT)
+    {
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      f->eax = process_wait (args[1]);
+    }
   else if (args[0] == SYS_OPEN)
-  {
-    if (is_char_pointer_valid(args[1]))
     {
-      f->eax = -1;
-      return;
-    }
-    struct file *fi = filesys_open(args[1]);
-    put_error_on_frame_when_null(fi, f);
-    return_on_null(fi);
-    struct file_descriptor *fds = palloc_get_page(0);
-    fds->fd = fdall;
-    fdall += 1;
-    fds->file = fi;
-    list_push_back(&thread_current()->file_descriptors, &(fds->elem));
-    f->eax = fds->fd;
-  }
-  else if (args[0] == SYS_FILESIZE)
-  {
-    struct file *fi = get_file_from_fd(&thread_current()->file_descriptors, args[1]);
-    put_error_on_frame_when_null(fi, f);
-    return_on_null(fi);
-    f->eax = file_length(fi);
-  }
-  else if (args[0] == SYS_WRITE)
-  {
-    if (!is_pointer_valid(args + 2) || !is_pointer_valid(args + 3) || !is_char_pointer_valid(args[2]))
-    {
-      f->eax = -1;
-      return;
-    }
-    if (args[1] == STDOUT_FILENO)
-    {
-      const char *buffer = (char *)args[2];
-      putbuf(buffer, (int)args[3]);
-    }
-    else
-    {
-      struct file *fi = get_file_from_fd(&thread_current()->file_descriptors, args[1]);
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      put_error_on_frame_when_false(strlen(args[1])>0, f);
+      return_on_false(strlen(args[1])>0);
+      struct file *fi = filesys_open (args[1]);
       put_error_on_frame_when_null(fi, f);
       return_on_null(fi);
-      f->eax = file_write(fi, args[2], args[3]);
+      struct file_descriptor *fds = malloc(sizeof (struct file_descriptor));
+      fds->fd = fdall;
+      fdall += 1;
+      fds->file = fi;
+      list_push_back (&thread_current ()->file_descriptors, &(fds->elem));
+      f->eax = fds->fd;
     }
-  }
+  else if (args[0] == SYS_FILESIZE)
+    {
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_length (fi);
+    }
+  else if (args[0] == SYS_WRITE)
+    {
+      if (!are_args_valid (args, 4) || !is_string_valid ((char *)args[2]))
+        _exit (-1);
+      if (args[1] == STDOUT_FILENO)
+        {
+          const char *buffer = (char *) args[2];
+          putbuf (buffer, (int) args[3]);
+        }
+      else
+        {
+          struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+          put_error_on_frame_when_null(fi, f);
+          return_on_null(fi);
+          f->eax = file_write (fi, args[2], args[3]);
+        }
+    }
   else if (args[0] == SYS_PRACTICE)
-  {
-    f->eax = args[1] + 1;
-  }
+    {
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      f->eax = args[1] + 1;
+    }
   else if (args[0] == SYS_READ)
-  {
-    if (!is_pointer_valid(args + 2) || !is_pointer_valid(args + 3) || !is_char_pointer_valid(args[2]))
     {
-      f->eax = -1;
-      return;
+      if (!are_args_valid (args, 4) || !is_string_valid ((char *)args[2]))
+        _exit (-1);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_read (fi, args[2], args[3]);
     }
-    struct file *fi = get_file_from_fd(&thread_current()->file_descriptors, args[1]);
-    put_error_on_frame_when_null(fi, f);
-    return_on_null(fi);
-    f->eax = file_read(fi, args[2], args[3]);
-  }
   else if (args[0] == SYS_CREATE)
-  {
-    if (!is_pointer_valid(args + 2) || !is_char_pointer_valid(args[1]))
     {
-      f->eax = -1;
-      return;
+      if (!are_args_valid (args, 3) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      put_error_on_frame_when_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0, f);
+      return_on_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0);
+      f->eax = filesys_create (args[1], args[2]);
     }
-    f->eax = filesys_create(args[1], args[2]);
-  }
   else if (args[0] == SYS_CLOSE)
-  {
-
-    struct file_descriptor *file_descriptor_instance = get_file_descriptor_from_fd(
-        &thread_current()->file_descriptors, args[1]);
-    return_on_null(file_descriptor_instance);
-    file_close(file_descriptor_instance->file);
-    list_remove(&(file_descriptor_instance->elem));
-    palloc_free_page(file_descriptor_instance);
-  }
+    {
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      struct file_descriptor *file_descriptor_instance = get_file_descriptor_from_fd (
+              &thread_current ()->file_descriptors, args[1]);
+      return_on_null(file_descriptor_instance);
+      file_close (file_descriptor_instance->file);
+      list_remove (&(file_descriptor_instance->elem));
+      free(file_descriptor_instance);
+    }
   else if (args[0] == SYS_SEEK)
-  {
-    if (!is_pointer_valid(args + 2))
     {
-      f->eax = -1;
-      return;
+      if (!are_args_valid (args, 3))
+        _exit (-1);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      return_on_null(fi);
+      file_seek (fi, args[2]);
     }
-    struct file *fi = get_file_from_fd(&thread_current()->file_descriptors, args[1]);
-    return_on_null(fi);
-    file_seek(fi, args[2]);
-  }
   else if (args[0] == SYS_TELL)
-  {
-    struct file *fi = get_file_from_fd(&thread_current()->file_descriptors, args[1]);
-    put_error_on_frame_when_null(fi, f);
-    return_on_null(fi);
-    f->eax = file_tell(fi);
-  }
-  else if (args[0] == SYS_REMOVE)
-  {
-    if (!is_char_pointer_valid(args[1]))
     {
-      f->eax = -1;
-      return;
+      if (!are_args_valid (args, 2))
+        _exit (-1);
+      struct file *fi = get_file_from_fd (&thread_current ()->file_descriptors, args[1]);
+      put_error_on_frame_when_null(fi, f);
+      return_on_null(fi);
+      f->eax = file_tell (fi);
     }
-    f->eax = filesys_remove(args[1]);
-  }
+  else if (args[0] == SYS_REMOVE)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      f->eax = filesys_remove (args[1]);
+    }
+  else if (args[0] == SYS_HALT)
+    {
+      shutdown_power_off ();
+    }
+  else if (args[0] == SYS_CHDIR)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      struct dir *dir = dir_open(file_open_recursive(args[1]));
+      if (dir==NULL)
+      {
+        f->eax = false;
+        return;
+      }
+      dir_close(thread_current ()->cwd);
+      thread_current ()->cwd = dir;
+      f->eax = true;
+    }
+  else if (args[0] == SYS_MKDIR)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      f->eax = filesys_mkdir (args[1]);
+    }
+  else if (args[0] == SYS_READDIR)
+    {
+      if (!are_args_valid (args, 3) || !is_string_valid ((char *)args[2]))
+        _exit (-1);
+      put_error_on_frame_when_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0, f);
+      return_on_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0);
+      int fd = args[1];
+      char* filename = args[2];
+
+      struct dir *dir = get_dir_from_fd (&thread_current ()->file_descriptors, fd);
+      put_error_on_frame_when_null(dir, f);
+      return_on_null(dir);
+      f->eax = dir_readdir (dir, filename);
+    }
+  else if (args[0] == SYS_ISDIR)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      int fd = args[1];
+      struct file_descriptor *filed = get_file_descriptor_from_fd (&thread_current ()->file_descriptors, fd);
+      put_error_on_frame_when_null(filed, f);
+      return_on_null(filed);
+      return filed->dir==NULL;
+    }
+  else if (args[0] == SYS_INUMBER)
+    {
+      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+        _exit (-1);
+      int fd = args[1];
+      struct file *file = get_file_from_fd (&thread_current ()->file_descriptors, fd);
+      put_error_on_frame_when_null(file, f);
+      return_on_null(file);
+      struct inode *inode = file_get_inode(file);
+      put_error_on_frame_when_null(inode, f);
+      return_on_null(inode);
+      f->eax = inode_get_inumber(inode);
+    }
+}
+
+bool
+is_pointer_mapped (struct thread *t, uint32_t *p)
+{
+  return pagedir_get_page (t->pagedir, p) != NULL;
+}
+
+bool
+is_void_pointer_mapped (struct thread *t, uint32_t *p)
+{
+  return pagedir_get_page (t->pagedir, p) != NULL;
+}
+
+bool
+is_pointer_valid (struct thread *t, uint32_t *p)
+{
+  return (p != NULL) && is_user_vaddr (p) && is_pointer_mapped (t, p);
+}
+
+bool
+is_void_pointer_valid (struct thread *t, void *p)
+{
+  return (p != NULL) && is_user_vaddr (p) && is_void_pointer_mapped (t, p);
+}
+
+bool
+is_string_valid (char *s)
+{
+  struct thread *t = thread_current ();
+  while (true)
+    {
+      if (!is_void_pointer_valid (t, (void *)s))
+        return false;
+      if (*s == '\0')
+        break;
+      s++;
+    }
+  return true;
+}
+
+bool
+are_args_valid (uint32_t *args, int number_of_args)
+{
+  struct thread *t = thread_current ();
+  int i;
+  for (i = 0; i <= number_of_args; i++)
+    {
+      if (!is_pointer_valid (t, &args[i]))
+        return false;
+    }
+  return true;
 }

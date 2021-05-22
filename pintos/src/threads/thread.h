@@ -103,8 +103,13 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    struct file *execfile;
     uint32_t *pagedir;                  /* Page directory. */
     struct list file_descriptors;
+    struct semaphore waiter;
+    int exit_code;
+    struct semaphore loader;
+    int success;                        /* Has load been successfull? */
 #endif
 
     /* Owned by thread.c. */
@@ -123,6 +128,7 @@ void thread_tick (void);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
+struct thread *thread_create_get_thread (const char *name, int priority, thread_func *, void *);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
@@ -146,5 +152,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Our garbage */
+struct thread *get_thread_from_tid(tid_t tid);
 
 #endif /* threads/thread.h */

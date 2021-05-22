@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -18,6 +19,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
@@ -34,10 +36,12 @@ process_execute (const char *file_name)
   char *fn_copy;
   char *dummy_save_ptr;
   tid_t tid;
+  struct thread *t;
 
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
+     Otherwise there's a race between the caller and load().
+     This should be free after load() */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
@@ -50,10 +54,32 @@ process_execute (const char *file_name)
 
   actual_file_name = strtok_r(actual_file_name, DEFAULT_DELIMITERS, &dummy_save_ptr);
 
+  struct file *file = filesys_open (actual_file_name);
+  if (!file)
+    {
+      palloc_free_page (fn_copy);
+      palloc_free_page (actual_file_name);
+      return TID_ERROR;
+    }
+  file_close (file);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (actual_file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+  t = thread_create_get_thread (actual_file_name, PRI_DEFAULT, start_process, fn_copy);
+  if (t != NULL)
+    {
+      sema_down(&t->loader);
+      if (!(t->success))
+        tid = TID_ERROR;
+      else
+        tid = t->tid;
+    }
+  else
+    {
+      palloc_free_page (fn_copy);
+      tid = TID_ERROR;
+    }
+  palloc_free_page (actual_file_name);
+
   return tid;
 }
 
@@ -75,8 +101,11 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
+  struct thread *t = thread_current ();
+  t->success = success;
+  sema_up(&t->loader);
   if (!success)
-    thread_exit ();
+    _exit(-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -98,10 +127,41 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
-  sema_down (&temporary);
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  struct thread *child = get_thread_from_tid(child_tid);
+  intr_set_level (old_level);
+  if (child == NULL)
+    {
+      return -1;
+    }
+  else
+    {
+      sema_down (&(child->waiter));
+      int status = child->exit_code;
+      old_level = intr_disable ();
+      list_remove (&(child->allelem));
+      palloc_free_page(child);
+      intr_set_level (old_level);
+      return status;
+    }
+}
+
+
+void
+free_file_descriptor_pages (struct thread *t)
+{
+  struct list *l = &t->file_descriptors;
+  struct list_elem *e = list_next (list_head (l));
+  while (!list_empty (l))
+    {
+      struct file_descriptor *ev = list_entry (e,
+      struct file_descriptor, elem);
+      e = list_remove (&(ev->elem));
+      file_close(ev->file);
+      free(ev);
+    }
 }
 
 /* Free the current process's resources. */
@@ -110,6 +170,9 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  file_close (cur->execfile);
+  free_file_descriptor_pages(cur);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -127,7 +190,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  sema_up (&temporary);
+  sema_up (&(cur->waiter));
 }
 
 /* Sets up the CPU for running user code in the current
@@ -337,11 +400,16 @@ load (const char *_file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+  /* We arrive here when the load is successful. */
   success = true;
-
+  t->execfile=file;
+  file_deny_write (t->execfile);
+  goto ret;
  done:
-  /* We arrive here whether the load is successful or not. */
+  /* We arrive here when the load is not successful. */
   file_close (file);
+ ret:
+  palloc_free_page(file_name_copy);
   return success;
 }
 
