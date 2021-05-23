@@ -16,6 +16,8 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+extern int fdall;
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -30,6 +32,7 @@ struct file_descriptor {
    int fd;
    struct list_elem elem;  
    struct file *file;
+   struct dir *dir;
 };
 
 /* A kernel thread or user process.
@@ -101,6 +104,7 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+   struct dir *cwd;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     struct file *execfile;
@@ -152,6 +156,14 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+
+struct file_descriptor *get_file_descriptor_from_fd (struct list *l, int the_fd);
+struct file *get_file_from_fd (struct list *l, int the_fd);
+struct dir *get_dir_from_fd (struct list *l, int the_fd);
+struct file_descriptor* create_file_descriptor_from_file (struct list *l, struct file* file);
+struct file_descriptor* create_file_descriptor_from_dir (struct list *l, struct dir* dir);
+bool remove_file_descriptor (struct list *l, int the_fd);
 
 /* Our garbage */
 struct thread *get_thread_from_tid(tid_t tid);

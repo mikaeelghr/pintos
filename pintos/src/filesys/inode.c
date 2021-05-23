@@ -8,27 +8,6 @@
 #include "threads/malloc.h"
 #include "cache.h"
 
-/* Identifies an inode. */
-#define INODE_MAGIC 0x494e4f44
-#define INODE_INSTANT_CHILDREN_COUNT 123
-#define INODE_INDIRECT_INSTANT_CHILDREN_COUNT 128
-#define min(a, b) ((a < b)? a : b)
-
-/* On-disk inode.
-   Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
-    int is_dir;
-    off_t length;                       /* File size in bytes. */
-    unsigned magic;                     /* Magic number. */
-    block_sector_t children[INODE_INSTANT_CHILDREN_COUNT];
-    block_sector_t double_indirect, indirect;
-  };
-
-struct indirect_node
-  {
-    block_sector_t children[INODE_INDIRECT_INSTANT_CHILDREN_COUNT];
-  };
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -38,17 +17,6 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
-/* In-memory inode. */
-struct inode
-  {
-    struct list_elem elem;              /* Element in inode list. */
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-    struct lock l;
-  };
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
@@ -381,6 +349,7 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
+  lock_init(&inode->l);
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
@@ -522,6 +491,7 @@ off_t inode_read_at_double_indirect (struct indirect_node *node, uint8_t *buffer
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
+  ASSERT(inode != NULL);
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
 
@@ -707,4 +677,31 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+bool
+inode_isdir(const struct inode *inode)
+{
+  if (inode == NULL)
+  {
+    return false;
+  }
+  struct inode_disk *inoded = malloc(sizeof *inoded);
+  cache_read (fs_device, inode_get_inumber(inode), inoded, 0, BLOCK_SECTOR_SIZE);
+  bool isdir = inoded->is_dir;
+  free (inoded);
+  return isdir;
+}
+
+
+void inode_release_lock (struct inode *inode)
+{
+  ASSERT(inode != NULL);
+  lock_release(&inode->l);
+}
+
+void inode_acquire_lock (struct inode *inode)
+{
+  ASSERT(inode != NULL);
+  lock_acquire(&inode->l);
 }

@@ -68,8 +68,10 @@ file_get_inode (struct file *file)
 off_t
 file_read (struct file *file, void *buffer, off_t size)
 {
+  inode_acquire_lock (file->inode);
   off_t bytes_read = inode_read_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_read;
+  inode_release_lock (file->inode);
   return bytes_read;
 }
 
@@ -81,7 +83,10 @@ file_read (struct file *file, void *buffer, off_t size)
 off_t
 file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 {
-  return inode_read_at (file->inode, buffer, size, file_ofs);
+  inode_acquire_lock (file->inode);
+  off_t bytes_read = inode_read_at (file->inode, buffer, size, file_ofs);
+  inode_release_lock (file->inode);
+  return bytes_read;
 }
 
 /* Writes SIZE bytes from BUFFER into FILE,
@@ -94,8 +99,10 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size)
 {
+  inode_acquire_lock (file->inode);
   off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
+  inode_release_lock (file->inode);
   return bytes_written;
 }
 
@@ -110,7 +117,10 @@ off_t
 file_write_at (struct file *file, const void *buffer, off_t size,
                off_t file_ofs)
 {
-  return inode_write_at (file->inode, buffer, size, file_ofs);
+  inode_acquire_lock (file->inode);
+  off_t bytes_written =  inode_write_at (file->inode, buffer, size, file_ofs);
+  inode_release_lock (file->inode);
+  return bytes_written;
 }
 
 /* Prevents write operations on FILE's underlying inode

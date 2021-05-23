@@ -101,9 +101,9 @@ fsutil_extract (char **argv UNUSED)
       /* Read and parse ustar header. */
       block_read (src, sector++, header);
       error = ustar_parse_header (header, &file_name, &type, &size);
+      
       if (error != NULL)
         PANIC ("bad ustar header in sector %"PRDSNu" (%s)", sector - 1, error);
-
       if (type == USTAR_EOF)
         {
           /* End of archive. */
@@ -114,7 +114,6 @@ fsutil_extract (char **argv UNUSED)
       else if (type == USTAR_REGULAR)
         {
           struct file *dst;
-
           printf ("Putting '%s' into the file system...\n", file_name);
 
           /* Create destination file. */
@@ -123,7 +122,7 @@ fsutil_extract (char **argv UNUSED)
           dst = filesys_open (file_name);
           if (dst == NULL)
             PANIC ("%s: open failed", file_name);
-
+          
           /* Do copy. */
           while (size > 0)
             {

@@ -110,6 +110,7 @@ main (void)
   timer_init ();
   kbd_init ();
   input_init ();
+  
 #ifdef USERPROG
   exception_init ();
   syscall_init ();
