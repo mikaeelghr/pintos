@@ -78,6 +78,7 @@ filesys_create (const char *full_path, off_t initial_size)
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
   dir_close (dir);
+  free (name);
   return success;
 }
 
@@ -88,11 +89,13 @@ filesys_mkdir (const char *full_path)
 {
   struct dir *dir = file_parent_dir_open_recursive (full_path);
   char* name = get_file_name(full_path);
+  struct dir *child_dir;
 
   block_sector_t inode_sector = 0;
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
                   && dir_create (inode_sector, 1)  // 1 parent with name ".."
+                  && (child_dir = dir_open(inode_open(inode_sector))) != NULL
                   && dir_add (dir, name, inode_sector));
 
   if (!success && inode_sector != 0)
@@ -100,17 +103,11 @@ filesys_mkdir (const char *full_path)
 
   if (!success)
     goto done;
-
-  struct dir *child_dir = dir_open(inode_open(inode_sector));
-  if (child_dir == NULL)
-  {
-    success = false;
-    goto done;
-  }
   success = dir_add (child_dir, "..", dir->inode->sector);
 
 done:
   dir_close (dir);
+  free (name);
   return success;
 }
 
@@ -195,6 +192,7 @@ filesys_remove (const char *full_path)
   char* name = get_file_name (full_path);
   bool success = dir != NULL && name != NULL && dir_remove (dir, name);
   dir_close (dir);
+  free (name);
   return success;
 }
 

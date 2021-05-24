@@ -239,7 +239,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     }
   else if (args[0] == SYS_ISDIR)
     {
-      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+      if (!are_args_valid (args, 2))
         _exit (-1);
       int fd = args[1];
       struct file_descriptor *filed = get_file_descriptor_from_fd (&thread_current ()->file_descriptors, fd);
