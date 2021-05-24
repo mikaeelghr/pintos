@@ -149,4 +149,5 @@ void cache_done (struct block *fs_device)
         flush_block(fs_device, i);
       lock_release (&cache_blocks[i].l);
     }
+  lock_release (&global_cache_lock);
 }

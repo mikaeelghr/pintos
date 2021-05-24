@@ -26,7 +26,7 @@ bool filesys_remove (const char *absolute_path);
 //bool filesys_remove_with_cwd (struct dir *cwd, const char *full_path);
 
 bool filesys_mkdir (const char *full_path);
-struct file *filesys_open_dir (const char *full_path);
+struct dir *filesys_open_dir (const char *full_path);
 
 char* get_absolute_path(char* file_name);
 

@@ -80,13 +80,33 @@ syscall_handler (struct intr_frame *f UNUSED)
         _exit (-1);
       put_error_on_frame_when_false(strlen(args[1])>0, f);
       return_on_false(strlen(args[1])>0);
-      struct file *fi = filesys_open (args[1]);
-      put_error_on_frame_when_null(fi, f);
-      return_on_null(fi);
-      struct file_descriptor *fds = malloc(sizeof (struct file_descriptor));
-      fds->fd = fdall;
-      fdall += 1;
-      fds->file = fi;
+      struct inode *inode = file_open_recursive ((char *)args[1]);
+      put_error_on_frame_when_null (inode, f);
+      return_on_null (inode);
+
+      struct file_descriptor *fds;
+      if (inode_isdir (inode))
+        {
+          struct dir *d = dir_open (inode);
+          put_error_on_frame_when_null (d, f);
+          return_on_null (d);
+          fds = malloc(sizeof (struct file_descriptor));
+          fds->fd = fdall;
+          fdall += 1;
+          fds->dir = d;
+          fds->file = NULL;
+        }
+      else
+        {
+          struct file *fi = file_open (inode);
+          put_error_on_frame_when_null (fi, f);
+          return_on_null (fi);
+          fds = malloc(sizeof (struct file_descriptor));
+          fds->fd = fdall;
+          fdall += 1;
+          fds->file = fi;
+          fds->dir = NULL;
+        }
       list_push_back (&thread_current ()->file_descriptors, &(fds->elem));
       f->eax = fds->fd;
     }
@@ -135,8 +155,11 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       if (!are_args_valid (args, 3) || !is_string_valid ((char *)args[1]))
         _exit (-1);
-      put_error_on_frame_when_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0, f);
-      return_on_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0);
+      if (strlen(args[1]) > NAME_MAX || strlen(args[1]) == 0)
+        {
+          f->eax = 0;
+          return;
+        }
       f->eax = filesys_create (args[1], args[2]);
     }
   else if (args[0] == SYS_CLOSE)
@@ -195,14 +218,17 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
         _exit (-1);
+      if (strlen((char *)args[1]) == 0)
+        {
+          f->eax = 0;
+          return;
+        }
       f->eax = filesys_mkdir (args[1]);
     }
   else if (args[0] == SYS_READDIR)
     {
-      if (!are_args_valid (args, 3) || !is_string_valid ((char *)args[2]))
+      if (!are_args_valid (args, 3))
         _exit (-1);
-      put_error_on_frame_when_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0, f);
-      return_on_false(strlen(args[1]) <= NAME_MAX || strlen(args[1])>0);
       int fd = args[1];
       char* filename = args[2];
 
@@ -223,13 +249,17 @@ syscall_handler (struct intr_frame *f UNUSED)
     }
   else if (args[0] == SYS_INUMBER)
     {
-      if (!are_args_valid (args, 2) || !is_string_valid ((char *)args[1]))
+      if (!are_args_valid (args, 2))
         _exit (-1);
       int fd = args[1];
-      struct file *file = get_file_from_fd (&thread_current ()->file_descriptors, fd);
-      put_error_on_frame_when_null(file, f);
-      return_on_null(file);
-      struct inode *inode = file_get_inode(file);
+      struct file_descriptor *fds = get_file_descriptor_from_fd (&thread_current ()->file_descriptors, fd);
+      put_error_on_frame_when_null(fds, f);
+      return_on_null(fds);
+      struct inode *inode;
+      if (fds->file)
+          inode = file_get_inode(fds->file);
+      else
+          inode = dir_get_inode(fds->dir);
       put_error_on_frame_when_null(inode, f);
       return_on_null(inode);
       f->eax = inode_get_inumber(inode);

@@ -19,7 +19,7 @@
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -93,7 +93,6 @@ lookup (const struct dir *dir, const char *name,
   ASSERT (name != NULL);
 
   lock_acquire (&dir->l);
-  inode_acquire_lock (dir->inode);
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e)
     if (e.in_use && !strcmp (name, e.name))
@@ -103,10 +102,8 @@ lookup (const struct dir *dir, const char *name,
         if (ofsp != NULL)
           *ofsp = ofs;
         lock_release (&dir->l);
-        inode_release_lock (dir->inode);
         return true;
       }
-  inode_release_lock (dir->inode);
   lock_release (&dir->l);
   return false;
 }
@@ -125,10 +122,8 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (name != NULL);
 
   if (strlen (name) == 1 && name[0] == '.')
-  {
     *inode = dir->inode;
-  }
-  if (lookup (dir, name, &e, NULL))
+  else if (lookup (dir, name, &e, NULL))
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
@@ -168,20 +163,16 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
      inode_read_at() will only return a short read at end of file.
      Otherwise, we'd need to verify that we didn't get a short
      read due to something intermittent such as low memory. */
-  inode_acquire_lock (dir->inode);
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e)
     if (!e.in_use)
       break;
-  inode_release_lock (dir->inode);
 
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = inode_sector;
-  inode_acquire_lock (dir->inode);
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
-  inode_release_lock (dir->inode);
   lock_release (&dir->l);
 
  done_without_lock_release:
@@ -219,15 +210,13 @@ dir_remove (struct dir *dir, const char *name)
     struct dir_entry child_e;
     size_t child_ofs;
     lock_acquire (&child_dir->l);
-    inode_acquire_lock (inode);
-    for (child_ofs = 1; inode_read_at (inode, &child_e, sizeof child_e, child_ofs) == sizeof child_e;
+    for (child_ofs = sizeof child_e; inode_read_at (inode, &child_e, sizeof child_e, child_ofs) == sizeof child_e;
         child_ofs += sizeof child_e)
       if (child_e.in_use)
         {
           failed = true;
           break;
         }
-    inode_release_lock (inode);
     lock_release (&child_dir->l);
     dir_close(child_dir);
     if (failed)
@@ -238,14 +227,10 @@ dir_remove (struct dir *dir, const char *name)
 
   /* Erase directory entry. */
   e.in_use = false;
-  inode_acquire_lock (dir->inode);
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e)
   {
-    inode_release_lock (dir->inode);
     goto done_without_lock_release;
   }
-  else  
-    inode_release_lock (dir->inode);
 
   /* Remove inode. */
   inode_remove (inode);
@@ -266,7 +251,8 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
   lock_acquire (&dir->l);
-  inode_acquire_lock (dir->inode);
+  if (dir->pos == 0)
+    dir->pos = sizeof e;
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
@@ -274,11 +260,9 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           lock_release (&dir->l);
-          inode_release_lock (dir->inode);
           return true;
         }
     }
-  inode_release_lock (dir->inode);
   lock_release (&dir->l);
   return false;
 }
@@ -287,11 +271,21 @@ char*
 get_file_name(const char *full_path)
 {
   char *token, *save_ptr, *last_token=NULL;
-  for (token = strtok_r (full_path, "/", &save_ptr); token != NULL; 
+  char *copy_path = malloc(strlen(full_path) + 1);
+  memcpy(copy_path, full_path, strlen(full_path) + 1);
+  for (token = strtok_r (copy_path, "/", &save_ptr); token != NULL;
   token = strtok_r (NULL, "/", &save_ptr)) {
     last_token=token;
   }
-  return last_token;
+  if (!last_token)
+    {
+      free (copy_path);
+      return NULL;
+    }
+  char *copy_last_token = malloc(strlen(last_token) + 1);
+  memcpy(copy_last_token, last_token, strlen(last_token) + 1);
+  free(copy_path);
+  return copy_last_token;
 }
 
 struct dir*
@@ -318,7 +312,9 @@ file_parent_dir_open_recursive(const char *full_path)
   }
   struct dir *pdir = NULL;
   char *token, *save_ptr;
-  for (token = strtok_r (full_path + path_offset, "/", &save_ptr); token != NULL; 
+  char *copy_path = malloc(strlen(full_path) + 1);
+  memcpy(copy_path, full_path, strlen(full_path) + 1);
+  for (token = strtok_r (copy_path + path_offset, "/", &save_ptr); token != NULL;
   token = strtok_r (NULL, "/", &save_ptr))
   {
     if(pdir!=NULL){
@@ -326,15 +322,18 @@ file_parent_dir_open_recursive(const char *full_path)
     }
     if(NULL==pinode)
     {
+      free(copy_path);
       return NULL;
     }
     pdir=dir_open(pinode);
     if(pdir==NULL)
     {
+      free(copy_path);
       return NULL;
     }
     dir_lookup(pdir, token, &pinode);
   }
+  free(copy_path);
   return pdir;
 }
 
@@ -342,6 +341,8 @@ struct inode*
 file_open_recursive(const char *full_path)
 {
   struct dir *cwd = thread_current()->cwd;
+  if (cwd && cwd->inode && cwd->inode->removed)
+    return NULL;
   return_null_when_null(full_path);
   struct inode *pinode = NULL, *inode_copy=NULL;
   int path_offset=0;
@@ -359,13 +360,17 @@ file_open_recursive(const char *full_path)
     //ASSERT(woow_rel==1);
     pinode = inode_reopen (cwd->inode);
   }
+  inode_copy = inode_reopen (pinode);
   struct dir *pdir = NULL;
   char *token, *save_ptr;
-  for (token = strtok_r (full_path + path_offset, "/", &save_ptr); token != NULL; 
+  char *copy_path = malloc(strlen(full_path) + 1);
+  memcpy(copy_path, full_path, strlen(full_path) + 1);
+  for (token = strtok_r (copy_path + path_offset, "/", &save_ptr); token != NULL;
   token = strtok_r (NULL, "/", &save_ptr))
   {
     if(NULL==pinode)
     {
+      free(copy_path);
       return NULL;
     }
     if(inode_copy!=NULL)
@@ -375,11 +380,13 @@ file_open_recursive(const char *full_path)
     pdir=dir_open(pinode);
     if(pdir==NULL)
     {
+      free(copy_path);
       return NULL;
     }
     dir_lookup(pdir, token, &pinode);
     inode_copy = inode_reopen(pinode);
     dir_close (pdir);
   }
+  free(copy_path);
   return inode_copy;
 }

@@ -12,7 +12,7 @@
 #define return_null_on_absolute_wrong_first_char(absolute_path) \
   if(absolute_path==NULL || absolute_path[0]!='/'){             \
     return NULL;                                                \
-  }                                                             
+  }
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -71,8 +71,9 @@ filesys_create (const char *full_path, off_t initial_size)
 
   block_sector_t inode_sector = 0;
   bool success = (dir != NULL
+                  && !dir->inode->removed
                   && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
+                  && inode_create (inode_sector, initial_size, false)
                   && dir_add (dir, name, inode_sector));
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
@@ -93,10 +94,10 @@ filesys_mkdir (const char *full_path)
                   && free_map_allocate (1, &inode_sector)
                   && dir_create (inode_sector, 1)  // 1 parent with name ".."
                   && dir_add (dir, name, inode_sector));
-  
+
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
-  
+
   if (!success)
     goto done;
 
@@ -107,18 +108,18 @@ filesys_mkdir (const char *full_path)
     goto done;
   }
   success = dir_add (child_dir, "..", dir->inode->sector);
-  
+
 done:
   dir_close (dir);
   return success;
 }
 
-struct file *
+struct dir *
 filesys_open_dir (const char *full_path)
 {
   struct inode *inode = file_open_recursive (full_path);
-  struct file *file = dir_open (inode);
-  return file;
+  struct dir *dir = dir_open (inode);
+  return dir;
 }
 
 
@@ -192,7 +193,7 @@ filesys_remove (const char *full_path)
 {
   struct dir *dir = file_parent_dir_open_recursive (full_path);
   char* name = get_file_name (full_path);
-  bool success = dir != NULL && dir_remove (dir, name);
+  bool success = dir != NULL && name != NULL && dir_remove (dir, name);
   dir_close (dir);
   return success;
 }
