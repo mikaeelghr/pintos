@@ -127,6 +127,7 @@ archive_ordinary_file (const char *file_name, int file_fd,
   bool read_error = false;
   bool success = true;
   int file_size = filesize (file_fd);
+  int initial = file_size;
 
   if (!write_header (file_name, USTAR_REGULAR, file_size,
                      archive_fd, write_error))

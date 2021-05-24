@@ -99,32 +99,33 @@ static int find_an_empty_cache_block (struct block *fs_device, block_sector_t se
 /*
  * returns from this function with the lock of that block in hand
  */
-static int bring_block_to_cache (struct block *fs_device, block_sector_t sector_idx)
+static int bring_block_to_cache (struct block *fs_device, block_sector_t sector_idx, bool read_from_disk)
 {
   int index = find_an_empty_cache_block (fs_device, sector_idx);
   cache_blocks[index].used = 1;
   cache_blocks[index].valid = 1;
   cache_blocks[index].dirty = 0;
   cache_blocks[index].sector_idx = sector_idx;
-  block_read (fs_device, sector_idx, cache_blocks[index].data);
+  if (read_from_disk)
+    block_read (fs_device, sector_idx, cache_blocks[index].data);
   return index;
 }
 
 /*
  * returns from this function with the lock of that block in hand
  */
-int get_block_index (struct block *fs_device, block_sector_t sector_idx)
+int get_block_index (struct block *fs_device, block_sector_t sector_idx, bool read_from_disk)
 {
   int found = try_finding_block (fs_device, sector_idx);
   if (found >= 0)
     return found;
 
-  return bring_block_to_cache (fs_device, sector_idx);
+  return bring_block_to_cache (fs_device, sector_idx, read_from_disk);
 }
 
 void cache_read (struct block *fs_device, block_sector_t sector_idx, void *buffer, off_t size, off_t offset)
 {
-  int index = get_block_index (fs_device, sector_idx);
+  int index = get_block_index (fs_device, sector_idx, true);
   memcpy (buffer, cache_blocks[index].data + offset, size);
   lock_release (&cache_blocks[index].l);
 }
@@ -132,7 +133,7 @@ void cache_read (struct block *fs_device, block_sector_t sector_idx, void *buffe
 
 void cache_write (struct block *fs_device, block_sector_t sector_idx, void *buffer, off_t size, off_t offset)
 {
-  int index = get_block_index (fs_device, sector_idx);
+  int index = get_block_index (fs_device, sector_idx, offset != 0 || size != BLOCK_SECTOR_SIZE);
   memcpy (cache_blocks[index].data + offset, buffer, size);
   cache_blocks[index].dirty = 1;
   lock_release (&cache_blocks[index].l);

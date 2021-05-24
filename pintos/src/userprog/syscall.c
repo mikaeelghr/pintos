@@ -243,9 +243,10 @@ syscall_handler (struct intr_frame *f UNUSED)
         _exit (-1);
       int fd = args[1];
       struct file_descriptor *filed = get_file_descriptor_from_fd (&thread_current ()->file_descriptors, fd);
-      put_error_on_frame_when_null(filed, f);
-      return_on_null(filed);
-      return filed->dir==NULL;
+      if (!filed || filed->file)
+          f->eax = false;
+      else
+        f->eax = true;
     }
   else if (args[0] == SYS_INUMBER)
     {

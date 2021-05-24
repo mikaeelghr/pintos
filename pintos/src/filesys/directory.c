@@ -251,12 +251,10 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
   lock_acquire (&dir->l);
-  if (dir->pos == 0)
-    dir->pos = sizeof e;
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
-      if (e.in_use)
+      if (e.in_use && (strlen(e.name) != 2 || e.name[0] != '.' || e.name[1] != '.'))
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           lock_release (&dir->l);

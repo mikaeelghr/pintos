@@ -96,16 +96,12 @@ filesys_mkdir (const char *full_path)
                   && free_map_allocate (1, &inode_sector)
                   && dir_create (inode_sector, 1)  // 1 parent with name ".."
                   && (child_dir = dir_open(inode_open(inode_sector))) != NULL
+                  && dir_add (child_dir, "..", dir->inode->sector)
                   && dir_add (dir, name, inode_sector));
 
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
 
-  if (!success)
-    goto done;
-  success = dir_add (child_dir, "..", dir->inode->sector);
-
-done:
   dir_close (dir);
   free (name);
   return success;

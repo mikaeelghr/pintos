@@ -9,7 +9,7 @@
 #include "cache.h"
 
 
-struct lock *open_inodes_lock;
+struct lock open_inodes_lock;
 
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -131,7 +131,7 @@ bool inode_try_creating_double_indirect (block_sector_t *sector, size_t sectors)
   for (i = 0; i < indirect && success; i++)
     {
       size_t to_allocate_sectors;
-      if (i + 1 < indirect)
+      if (i + 1 < indirect || sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT == 0)
         to_allocate_sectors = INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
       else
         to_allocate_sectors = sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
@@ -141,7 +141,7 @@ bool inode_try_creating_double_indirect (block_sector_t *sector, size_t sectors)
   if (!success)
     {
       size_t j;
-      for (j = 0; j < i; j++)
+      for (j = 0; j < i - 1; j++)
         {
           inode_release_indirect (double_indirect->children[j], INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
         }
@@ -196,15 +196,16 @@ bool inode_try_growing_doubly_indirect (block_sector_t sector, size_t sectors, s
   for (i = 0; i < indirect && success; i++)
     {
       size_t to_allocate_sectors;
-      if (i + 1 < indirect)
+      if (i + 1 < indirect || sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT == 0)
         to_allocate_sectors = INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
       else
         to_allocate_sectors = sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
       size_t current_to_allocate_sectors = 0;
-      if (i + 1 < current_indirect)
+      if (i + 1 < current_indirect ||
+          (i + 1 == current_indirect && current_sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT == 0))
         current_to_allocate_sectors = INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
       else if (i + 1 == current_indirect)
-        current_to_allocate_sectors = sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
+        current_to_allocate_sectors = current_sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
       if (current_to_allocate_sectors != to_allocate_sectors)
         success &= inode_try_growing_indirect (double_indirect->children[i], to_allocate_sectors,
                                                current_to_allocate_sectors);
@@ -228,15 +229,15 @@ bool inode_grow (struct inode_disk *disk_inode, size_t sectors)
                 INODE_INDIRECT_INSTANT_CHILDREN_COUNT * INODE_INDIRECT_INSTANT_CHILDREN_COUNT)
     return 0;
   size_t instant_sectors =
-          min(sectors, INODE_INSTANT_CHILDREN_COUNT) - min(current_sectors, INODE_INSTANT_CHILDREN_COUNT);
+          min (sectors, INODE_INSTANT_CHILDREN_COUNT) - min (current_sectors, INODE_INSTANT_CHILDREN_COUNT);
   if (!inode_try_allocating_sectors (disk_inode->children + current_sectors, instant_sectors))
     return 0;
-  sectors -= instant_sectors + min(current_sectors, INODE_INSTANT_CHILDREN_COUNT);
-  current_sectors -= min(current_sectors, INODE_INSTANT_CHILDREN_COUNT);
+  sectors -= instant_sectors + min (current_sectors, INODE_INSTANT_CHILDREN_COUNT);
+  current_sectors -= min (current_sectors, INODE_INSTANT_CHILDREN_COUNT);
   if (!sectors)
     return 1;
-  size_t current_indirect_sectors = min(current_sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
-  size_t indirect_sectors = min(sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
+  size_t current_indirect_sectors = min (current_sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
+  size_t indirect_sectors = min (sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
   if (!current_indirect_sectors && !inode_try_creating_indirect (&disk_inode->indirect, indirect_sectors, 1))
     {
       inode_release_sectors (disk_inode->children, instant_sectors);
@@ -245,17 +246,17 @@ bool inode_grow (struct inode_disk *disk_inode, size_t sectors)
   else if (!inode_try_growing_indirect (disk_inode->indirect, indirect_sectors, current_indirect_sectors))
     return 0;
   sectors -= indirect_sectors;
+  current_sectors -= current_indirect_sectors;
   if (!sectors)
     return 1;
 
-  size_t double_indirect_sectors = sectors;
-
-  if (!inode_try_creating_double_indirect (&disk_inode->double_indirect, double_indirect_sectors))
+  if (!current_sectors && !inode_try_creating_double_indirect (&disk_inode->double_indirect, sectors))
     {
       inode_release_sectors (disk_inode->children, instant_sectors);
       inode_release_indirect (disk_inode->indirect, indirect_sectors);
-      return 0;
     }
+  else if (!inode_try_growing_doubly_indirect (disk_inode->double_indirect, sectors, current_sectors))
+    return 0;
   return 1;
 }
 
@@ -265,13 +266,13 @@ bool inode_try_creating_inode (struct inode_disk *disk_inode, size_t sectors)
   if (sectors > INODE_INSTANT_CHILDREN_COUNT + INODE_INDIRECT_INSTANT_CHILDREN_COUNT +
                 INODE_INDIRECT_INSTANT_CHILDREN_COUNT * INODE_INDIRECT_INSTANT_CHILDREN_COUNT)
     return 0;
-  size_t instant_sectors = min(sectors, INODE_INSTANT_CHILDREN_COUNT);
+  size_t instant_sectors = min (sectors, INODE_INSTANT_CHILDREN_COUNT);
   if (!inode_try_allocating_sectors (disk_inode->children, instant_sectors))
     return 0;
   sectors -= instant_sectors;
   if (!sectors)
     return 1;
-  size_t indirect_sectors = min(sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
+  size_t indirect_sectors = min (sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
   if (!inode_try_creating_indirect (&disk_inode->indirect, indirect_sectors, 1))
     {
       inode_release_sectors (disk_inode->children, instant_sectors);
@@ -361,7 +362,7 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
-  lock_init(&inode->l);
+  lock_init (&inode->l);
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
@@ -410,11 +411,11 @@ inode_close (struct inode *inode)
         {
           size_t sectors = bytes_to_sectors (inode->data.length);
 
-          size_t instant_sectors = min(sectors, INODE_INSTANT_CHILDREN_COUNT);
+          size_t instant_sectors = min (sectors, INODE_INSTANT_CHILDREN_COUNT);
           inode_release_sectors (inode->data.children, instant_sectors);
           sectors -= instant_sectors;
 
-          size_t indirect_sectors = min(sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
+          size_t indirect_sectors = min (sectors, INODE_INDIRECT_INSTANT_CHILDREN_COUNT);
           if (indirect_sectors)
             {
               inode_release_indirect (inode->data.indirect, indirect_sectors);
@@ -430,7 +431,7 @@ inode_close (struct inode *inode)
               for (i = 0; i < indirect_nodes; i++)
                 {
                   size_t to_release_sectors;
-                  if (i + 1 < indirect_nodes)
+                  if (i + 1 < indirect_nodes || sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT == 0)
                     to_release_sectors = INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
                   else
                     to_release_sectors = sectors % INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
@@ -441,7 +442,7 @@ inode_close (struct inode *inode)
             }
         }
       else
-        cache_write(fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
+        cache_write (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
 
       free (inode);
     }
@@ -463,15 +464,15 @@ off_t inode_read_at_indirect (block_sector_t children[], uint8_t *buffer, off_t 
 
   off_t first_node_index = offset / node_size;
   block_sector_t first_node = children[first_node_index];
-  off_t from_first_size = min(size, node_size - (offset % node_size));
+  off_t from_first_size = min (size, node_size - (offset % node_size));
   cache_read (fs_device, first_node, buffer, from_first_size, offset % BLOCK_SECTOR_SIZE);
   bytes_read += from_first_size;
 
   size_t i;
   for (i = first_node_index + 1; bytes_read < size; i++)
     {
-      cache_read (fs_device, children[i], buffer + bytes_read, min(size - bytes_read, node_size), 0);
-      bytes_read += min(size - bytes_read, node_size);
+      cache_read (fs_device, children[i], buffer + bytes_read, min (size - bytes_read, node_size), 0);
+      bytes_read += min (size - bytes_read, node_size);
     }
   return bytes_read;
 }
@@ -479,11 +480,11 @@ off_t inode_read_at_indirect (block_sector_t children[], uint8_t *buffer, off_t 
 off_t inode_read_at_double_indirect (struct indirect_node *node, uint8_t *buffer, off_t size, off_t offset)
 {
   off_t bytes_read = 0;
-  off_t node_size = BLOCK_SECTOR_SIZE * INODE_INSTANT_CHILDREN_COUNT;
+  off_t node_size = BLOCK_SECTOR_SIZE * INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
 
   off_t first_node_index = offset / node_size;
   block_sector_t first_node = node->children[first_node_index];
-  off_t from_first_size = min(size, node_size - (offset % node_size));
+  off_t from_first_size = min (size, node_size - (offset % node_size));
   struct indirect_node *indirect = malloc (sizeof (struct indirect_node));
   if (!indirect)
     return 0;
@@ -494,8 +495,8 @@ off_t inode_read_at_double_indirect (struct indirect_node *node, uint8_t *buffer
   for (i = first_node_index + 1; bytes_read < size; i++)
     {
       cache_read (fs_device, node->children[i], indirect, BLOCK_SECTOR_SIZE, 0);
-      inode_read_at_indirect (indirect->children, buffer + bytes_read, min(size - bytes_read, node_size), 0);
-      bytes_read += min(size - bytes_read, node_size);
+      inode_read_at_indirect (indirect->children, buffer + bytes_read, min (size - bytes_read, node_size), 0);
+      bytes_read += min (size - bytes_read, node_size);
     }
 
   free (indirect);
@@ -508,15 +509,15 @@ off_t inode_read_at_double_indirect (struct indirect_node *node, uint8_t *buffer
 off_t
 inode_read_at_do (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
-  ASSERT(inode != NULL);
+  ASSERT (inode != NULL);
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
 
-  size = min(size, inode->data.length - offset);
+  size = min (size, inode->data.length - offset);
   if (size <= 0)
     return 0;
 
-  off_t to_read_from_children = min(size, INODE_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
+  off_t to_read_from_children = min (size, INODE_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
   if (to_read_from_children > 0)
     {
       bytes_read += inode_read_at_indirect (inode->data.children, buffer + bytes_read, to_read_from_children, offset);
@@ -528,8 +529,8 @@ inode_read_at_do (struct inode *inode, void *buffer_, off_t size, off_t offset)
   if (bytes_read == size)
     return bytes_read;
 
-  off_t to_read_from_indirect = min(size - bytes_read,
-                                    INODE_INDIRECT_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
+  off_t to_read_from_indirect = min (size - bytes_read,
+                                     INODE_INDIRECT_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
 
   struct indirect_node *node = malloc (sizeof (struct indirect_node));
   if (!node)
@@ -565,7 +566,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 }
 
 
-
 off_t inode_write_at_indirect (block_sector_t children[], uint8_t *buffer, off_t size, off_t offset)
 {
   off_t bytes_written = 0;
@@ -573,15 +573,15 @@ off_t inode_write_at_indirect (block_sector_t children[], uint8_t *buffer, off_t
 
   off_t first_node_index = offset / node_size;
   block_sector_t first_node = children[first_node_index];
-  off_t from_first_size = min(size, node_size - (offset % node_size));
+  off_t from_first_size = min (size, node_size - (offset % node_size));
   cache_write (fs_device, first_node, buffer, from_first_size, offset % BLOCK_SECTOR_SIZE);
   bytes_written += from_first_size;
 
   size_t i;
   for (i = first_node_index + 1; bytes_written < size; i++)
     {
-      cache_write (fs_device, children[i], buffer + bytes_written, min(size - bytes_written, node_size), 0);
-      bytes_written += min(size - bytes_written, node_size);
+      cache_write (fs_device, children[i], buffer + bytes_written, min (size - bytes_written, node_size), 0);
+      bytes_written += min (size - bytes_written, node_size);
     }
   return bytes_written;
 }
@@ -589,11 +589,11 @@ off_t inode_write_at_indirect (block_sector_t children[], uint8_t *buffer, off_t
 off_t inode_write_at_double_indirect (struct indirect_node *node, uint8_t *buffer, off_t size, off_t offset)
 {
   off_t bytes_written = 0;
-  off_t node_size = BLOCK_SECTOR_SIZE * INODE_INSTANT_CHILDREN_COUNT;
+  off_t node_size = BLOCK_SECTOR_SIZE * INODE_INDIRECT_INSTANT_CHILDREN_COUNT;
 
   off_t first_node_index = offset / node_size;
   block_sector_t first_node = node->children[first_node_index];
-  off_t from_first_size = min(size, node_size - (offset % node_size));
+  off_t from_first_size = min (size, node_size - (offset % node_size));
   struct indirect_node *indirect = malloc (sizeof (struct indirect_node));
   if (!indirect)
     return 0;
@@ -604,8 +604,8 @@ off_t inode_write_at_double_indirect (struct indirect_node *node, uint8_t *buffe
   for (i = first_node_index + 1; bytes_written < size; i++)
     {
       cache_read (fs_device, node->children[i], indirect, BLOCK_SECTOR_SIZE, 0);
-      inode_write_at_indirect (indirect->children, buffer + bytes_written, min(size - bytes_written, node_size), 0);
-      bytes_written += min(size - bytes_written, node_size);
+      inode_write_at_indirect (indirect->children, buffer + bytes_written, min (size - bytes_written, node_size), 0);
+      bytes_written += min (size - bytes_written, node_size);
     }
 
   free (indirect);
@@ -619,7 +619,7 @@ off_t inode_write_at_double_indirect (struct indirect_node *node, uint8_t *buffe
    growth is not yet implemented.) */
 off_t
 inode_write_at_do (struct inode *inode, const void *buffer_, off_t size,
-                off_t offset)
+                   off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
@@ -631,14 +631,14 @@ inode_write_at_do (struct inode *inode, const void *buffer_, off_t size,
       inode->data.length = offset + size;
       cache_write (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
     }
-  size = min(size, inode->data.length - offset);
+  size = min (size, inode->data.length - offset);
   if (size <= 0)
     return 0;
 
   if (inode->deny_write_cnt)
     return 0;
 
-  off_t to_read_from_children = min(size, INODE_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
+  off_t to_read_from_children = min (size, INODE_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
   if (to_read_from_children > 0)
     {
       bytes_written += inode_write_at_indirect (inode->data.children, buffer + bytes_written, to_read_from_children,
@@ -651,8 +651,8 @@ inode_write_at_do (struct inode *inode, const void *buffer_, off_t size,
   if (bytes_written == size)
     return bytes_written;
 
-  off_t to_read_from_indirect = min(size - bytes_written,
-                                    INODE_INDIRECT_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
+  off_t to_read_from_indirect = min (size - bytes_written,
+                                     INODE_INDIRECT_INSTANT_CHILDREN_COUNT * BLOCK_SECTOR_SIZE - offset);
 
   struct indirect_node *node = malloc (sizeof (struct indirect_node));
   if (!node)
@@ -717,7 +717,7 @@ inode_length (const struct inode *inode)
 }
 
 bool
-inode_isdir(const struct inode *inode)
+inode_isdir (const struct inode *inode)
 {
   return inode->data.is_dir;
 }
@@ -725,12 +725,12 @@ inode_isdir(const struct inode *inode)
 
 void inode_release_lock (struct inode *inode)
 {
-  ASSERT(inode != NULL);
-  lock_release(&inode->l);
+  ASSERT (inode != NULL);
+  lock_release (&inode->l);
 }
 
 void inode_acquire_lock (struct inode *inode)
 {
-  ASSERT(inode != NULL);
-  lock_acquire(&inode->l);
+  ASSERT (inode != NULL);
+  lock_acquire (&inode->l);
 }
