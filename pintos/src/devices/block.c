@@ -178,6 +178,18 @@ block_print_stats (void)
     }
 }
 
+int
+block_read_write_counts (struct block *block, long long *read_count, 
+                                      long long *write_count) 
+{
+  if (block == NULL || read_count == NULL || write_count == NULL)
+    return -1;
+
+  *read_count = block->read_cnt;
+  *write_count = block->write_cnt;
+  return 0;
+}
+
 /* Registers a new block device with the given NAME.  If
    EXTRA_INFO is non-null, it is printed as part of a user
    message.  The block device's SIZE in sectors and its TYPE must

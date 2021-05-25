@@ -20,6 +20,12 @@ struct cache_block
 
 static int clock;
 
+/* cache statistics. */
+static long long cache_hit_count;
+static long long cache_access_count;
+static struct lock cache_counter_lock;
+static bool initialized;
+
 static struct cache_block cache_blocks[CACHE_BLOCK_COUNT];
 static struct lock global_cache_lock;
 
@@ -27,6 +33,7 @@ void cache_init (void)
 {
   lock_init (&global_cache_lock);
 
+  initialized = true;
   int i;
   for (i = 0; i < CACHE_BLOCK_COUNT; i++)
     {
@@ -35,6 +42,19 @@ void cache_init (void)
     }
 }
 
+int
+cache_get_stats (long long *access_count, long long *hit_count)
+{
+  if (access_count == NULL || hit_count == NULL)
+    return -1;
+
+  lock_acquire (&cache_counter_lock);
+  *access_count = cache_access_count;
+  *hit_count = cache_hit_count;
+  lock_release (&cache_counter_lock);
+  
+  return 0;
+}
 
 void flush_block (struct block *fs_device, int index)
 {
@@ -116,10 +136,16 @@ static int bring_block_to_cache (struct block *fs_device, block_sector_t sector_
  */
 int get_block_index (struct block *fs_device, block_sector_t sector_idx, bool read_from_disk)
 {
+  lock_acquire (&cache_counter_lock);
+  cache_access_count++;
+  lock_release (&cache_counter_lock);
   int found = try_finding_block (fs_device, sector_idx);
-  if (found >= 0)
+  if (found >= 0){
+    lock_acquire (&cache_counter_lock);
+    cache_hit_count++;
+    lock_release (&cache_counter_lock);
     return found;
-
+  }
   return bring_block_to_cache (fs_device, sector_idx, read_from_disk);
 }
 
@@ -141,6 +167,10 @@ void cache_write (struct block *fs_device, block_sector_t sector_idx, void *buff
 
 void cache_done (struct block *fs_device)
 {
+  if(!initialized)
+  {
+    return;
+  }
   lock_acquire (&global_cache_lock);
   int i;
   for (i = 0; i < CACHE_BLOCK_COUNT; i++)
@@ -148,6 +178,7 @@ void cache_done (struct block *fs_device)
       lock_acquire (&cache_blocks[i].l);
       if (cache_blocks[i].valid && cache_blocks[i].dirty)
         flush_block(fs_device, i);
+      cache_blocks[i].valid = false;
       lock_release (&cache_blocks[i].l);
     }
   lock_release (&global_cache_lock);

@@ -191,9 +191,29 @@ inumber (int fd)
   return syscall1 (SYS_INUMBER, fd);
 }
 
+void
+cacheinv (void)
+{
+  syscall0 (SYS_CACHEINV);
+}
+
+int
+cachestat (const long long *access_count, const long long *hit_count)
+{
+  return syscall2 (SYS_CACHESTAT, access_count, hit_count);
+}
+
+int
+diskreadwritecount (const long long *read_count, const long long *write_count)
+{
+  return syscall2 (SYS_DISKREADWRITECOUNT, read_count, write_count);
+}
+
+
 void*
 sbrk (intptr_t increment)
 {
   /* Homework 5, Part B: YOUR CODE HERE */
   return NULL;
 }
+

@@ -264,6 +264,18 @@ syscall_handler (struct intr_frame *f UNUSED)
       put_error_on_frame_when_null(inode, f);
       return_on_null(inode);
       f->eax = inode_get_inumber(inode);
+    }else if(args[0] == SYS_CACHEINV){
+      if (!are_args_valid (args, 1))
+        _exit (-1);
+      cache_done (fs_device);
+    }else if(args[0] == SYS_CACHESTAT){
+      if (!are_args_valid (args, 3))
+        _exit (-1);
+      f->eax = cache_get_stats(fs_device, (long long*) args[1], (long long*) args[2]);
+    }else if(args[0] == SYS_DISKREADWRITECOUNT){
+      if (!are_args_valid (args, 3))
+        _exit (-1);
+      f->eax = block_read_write_counts(fs_device, (long long*) args[1], (long long*) args[2]);
     }
 }
 
