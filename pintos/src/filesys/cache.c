@@ -24,7 +24,7 @@ static int clock;
 static long long cache_hit_count;
 static long long cache_access_count;
 static struct lock cache_counter_lock;
-static bool initialized;
+static bool initialized = false;
 
 static struct cache_block cache_blocks[CACHE_BLOCK_COUNT];
 static struct lock global_cache_lock;
@@ -32,6 +32,7 @@ static struct lock global_cache_lock;
 void cache_init (void)
 {
   lock_init (&global_cache_lock);
+  lock_init (&cache_counter_lock);
 
   initialized = true;
   int i;
