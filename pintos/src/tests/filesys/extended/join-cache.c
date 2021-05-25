@@ -19,20 +19,31 @@ test_main (void)
   const char *file_name = "garbage";
   int fd;
 
+
+  long long int base_read_count, base_write_count;
+  long long int read_count, write_count;
+
   CHECK (create (file_name, sizeof buf1), "create \"%s\"", file_name);
   CHECK ((fd = open (file_name)) > 1, "open \"%s\"", file_name);
 
-  for (int i = 0; i < 100*1000; i += 1) {
+  CHECK (diskreadwritecount (&base_read_count, &base_write_count) >= 0, "disk count");
+
+
+  for (int i = 0; i < 64*1000; i += 1) {
     random_bytes (buf1, sizeof buf1);
-    CHECK (write (fd, buf1, sizeof buf1) > 0, "write %d \"%s\"", i, file_name);
+    if (write (fd, buf1, sizeof buf1) <= 0) {
+        CHECK(0, "Failed on %d write", i);
+    }
   }
 
-  int read_count, write_count;
 
   CHECK (diskreadwritecount (&read_count, &write_count) >= 0, "disk count");
-  
-  CHECK(write_count < 150, "write count: %d", write_count);
-  CHECK(read_count < 150, "read count: %d", read_count);
+
+  read_count -= base_read_count;
+  write_count -= base_write_count;
+
+  CHECK(write_count < 129, "write count ok", write_count);
+  CHECK(read_count < 129,   "read count ok", read_count);
 
 /*
   struct list_elem *e;

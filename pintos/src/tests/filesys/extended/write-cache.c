@@ -27,12 +27,12 @@ test_main (void)
     CHECK (write (fd, buf1, sizeof buf1) > 0, "write %d \"%s\"", i, file_name);
   }
 
-  int read_count, write_count;
+  long long int read_count, write_count;
 
   CHECK (diskreadwritecount (&read_count, &write_count) >= 0, "disk count");
   
   CHECK(write_count > 200, "write count ok");
-  CHECK(read_count < 10, "read count ok");
+  CHECK(read_count < 40, "read count ok");
 
 /*
   struct list_elem *e;
