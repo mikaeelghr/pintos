@@ -271,7 +271,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     }else if(args[0] == SYS_CACHESTAT){
       if (!are_args_valid (args, 3))
         _exit (-1);
-      f->eax = cache_get_stats(fs_device, (long long*) args[1], (long long*) args[2]);
+      f->eax = cache_get_stats((long long*) args[1], (long long*) args[2]);
     }else if(args[0] == SYS_DISKREADWRITECOUNT){
       if (!are_args_valid (args, 3))
         _exit (-1);
